@@ -3,6 +3,7 @@
 # collector subtrees so GitHub Actions can commit them.
 data/*
 !data/public/
+!data/social/
 !data/markets/
 !data/resolutions/
 

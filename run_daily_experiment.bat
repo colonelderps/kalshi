@@ -10,4 +10,10 @@ REM merge them into the master DB before running experiments. Non-fatal if
 REM it fails (e.g. no network).
 python -u sync_from_cloud.py >> "logs\daily_%DATESTAMP%.log" 2>&1
 
+REM Refresh market metadata (categories, resolutions) for every ticker we've
+REM seen. Lets today's experiments classify trades properly and fills in
+REM `result` for markets that resolved overnight. Limit capped so one bad day
+REM can't stall the daily job indefinitely.
+python -u enrich_markets.py --stale-hours 12 --limit 2000 >> "logs\daily_%DATESTAMP%.log" 2>&1
+
 python -u daily_experiment.py --n 5 >> "logs\daily_%DATESTAMP%.log" 2>&1

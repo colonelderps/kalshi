@@ -1,0 +1,71 @@
+name: tail_social
+
+# Continuous coverage of the Kalshi v1 social firehose via 5-min-cron
+# long-running jobs. Each run polls for ~4m30s, commits new rows as
+# data/social/<ts>.jsonl.gz, and exits. The next cron slot picks up.
+#
+# Public-repo minutes are unlimited and free, so "always-running" here
+# costs $0.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/tail_social.yml'
+      - 'ga_tail_social.py'
+      - 'cloud_lib.py'
+  schedule:
+    - cron: '*/5 * * * *'   # every 5 minutes
+  workflow_dispatch:
+
+concurrency:
+  group: tail_social
+  # If a previous run ran long, queue the new one rather than skipping it
+  cancel-in-progress: false
+
+jobs:
+  tail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7      # hard ceiling above the script's 4m30s budget
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Tail social trades
+        env:
+          KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
+          KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+          SOCIAL_POLL_SEC: '8'
+          SOCIAL_MAX_SECONDS: '270'
+        run: python -u ga_tail_social.py
+
+      - name: Commit new data
+        run: |
+          git config user.name "kalshi-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/social/
+          if git diff --cached --quiet; then
+            echo "No new data this run."
+            exit 0
+          fi
+          git commit -m "data: tail_social $(date -u +%Y-%m-%dT%H:%MZ)"
+          # Rebase-push loop to handle the case where tail_public raced us
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin master && git push origin master && exit 0
+            echo "push attempt $i failed, retrying..."
+            sleep 3
+          done
+          echo "push failed 5 times" >&2
+          exit 1
