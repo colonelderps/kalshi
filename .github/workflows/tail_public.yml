@@ -1,0 +1,63 @@
+name: tail_public
+
+# Hourly forward-tail of the public Kalshi trades firehose. Each run fetches
+# any trades newer than the watermark in data/public/state.json, writes them
+# as a timestamped gzipped JSONL file under data/public/, and commits back.
+#
+# Local box pulls these files and merges them into the master SQLite DB.
+
+on:
+  schedule:
+    - cron: '7 * * * *'   # :07 of every hour (off-the-hour to dodge the herd)
+  workflow_dispatch:       # allow manual kick from UI / gh cli
+
+concurrency:
+  group: tail_public
+  cancel-in-progress: false
+
+jobs:
+  tail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install requests cryptography
+
+      - name: Tail public trades
+        env:
+          KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
+          KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+          TAIL_MAX_PAGES: '30'
+          TAIL_MAX_SECONDS: '240'
+        run: python -u ga_tail_public.py
+
+      - name: Commit new data
+        run: |
+          git config user.name "kalshi-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/public/
+          if git diff --cached --quiet; then
+            echo "No new data this run."
+            exit 0
+          fi
+          git commit -m "data: tail_public $(date -u +%Y-%m-%dT%H:%MZ)"
+          # Pull-rebase in case a concurrent run pushed first
+          for i in 1 2 3; do
+            git pull --rebase origin master && git push origin master && exit 0
+            echo "push attempt $i failed, retrying..."
+            sleep 5
+          done
+          echo "push failed 3 times" >&2
+          exit 1

@@ -1,7 +1,20 @@
-data/
+# Ignore everything under data/ by default (master SQLite lives here and is
+# big + binary; user's backfill state; etc.) but explicitly allow the cloud
+# collector subtrees so GitHub Actions can commit them.
+data/*
+!data/public/
+!data/markets/
+!data/resolutions/
+
+# Also ignore the sync state that only the local box writes.
+sync_state.json
+
 *.db
 *.db-*
 creds.json
 *.pem
 __pycache__/
 *.pyc
+logs/
+.venv/
+venv/
