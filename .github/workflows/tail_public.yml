@@ -7,6 +7,12 @@ name: tail_public
 # Local box pulls these files and merges them into the master SQLite DB.
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/tail_public.yml'
+      - 'ga_tail_public.py'
+      - 'cloud_lib.py'
   schedule:
     - cron: '7 * * * *'   # :07 of every hour (off-the-hour to dodge the herd)
   workflow_dispatch:       # allow manual kick from UI / gh cli
