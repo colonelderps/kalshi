@@ -39,7 +39,7 @@ jobs:
           cache: 'pip'
 
       - name: Install deps
-        run: pip install requests cryptography
+        run: pip install -r requirements.txt
 
       - name: Tail public trades
         env:
