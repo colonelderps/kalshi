@@ -93,8 +93,12 @@ def _ingest_social(con, f: Path) -> tuple[int, int]:
 
 
 # stream name -> (subdir, ingester)
+# public_backfill uses the same row shape/target table as public (both feed
+# trades_public); they differ only in which direction they walk (forward tail
+# vs backward cursor). INSERT OR IGNORE dedupes any overlap.
 STREAMS: dict[str, callable] = {
     "public": _ingest_public,
+    "public_backfill": _ingest_public,
     "social": _ingest_social,
 }
 

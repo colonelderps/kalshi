@@ -1,0 +1,71 @@
+name: backfill_public
+
+# Walks backward in time through the Kalshi public trades firehose using the
+# API's cursor. Each run chews through ~200 pages (~200k trades) in ~4min and
+# commits a jsonl.gz blob plus the updated cursor state.
+#
+# Every 10 minutes = ~30k pages/day in the best case (subject to Kalshi's
+# total history depth). Public repo = unlimited free Actions minutes.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/backfill_public.yml'
+      - 'ga_backfill_public.py'
+      - 'cloud_lib.py'
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: backfill_public
+  # Queue rather than skip if a previous run ran long, so we don't lose a slot.
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7     # ceiling above the 4m script budget
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Walk backward one chunk
+        env:
+          KALSHI_KEY_ID: ${{ secrets.KALSHI_KEY_ID }}
+          KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+          BACKFILL_MAX_PAGES: '200'
+          BACKFILL_MAX_SECONDS: '240'
+        run: python -u ga_backfill_public.py
+
+      - name: Commit new data
+        run: |
+          git config user.name "kalshi-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/public_backfill/
+          if git diff --cached --quiet; then
+            echo "No new data this run (likely finished=True)."
+            exit 0
+          fi
+          git commit -m "data: backfill_public $(date -u +%Y-%m-%dT%H:%MZ)"
+          # Rebase-push loop to handle races with tail_public / tail_social.
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin master && git push origin master && exit 0
+            echo "push attempt $i failed, retrying..."
+            sleep 3
+          done
+          echo "push failed 5 times" >&2
+          exit 1
