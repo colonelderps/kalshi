@@ -48,8 +48,12 @@ class KalshiError(RuntimeError):
         self.status, self.body, self.path = status, body, path
 
 
-def request(method: str, path: str, params: dict | None = None, *, retries: int = 4) -> Any:
-    """Signed request. Retries 429/5xx with backoff. Returns parsed JSON."""
+def request(method: str, path: str, params: dict | None = None, *, retries: int = 6) -> Any:
+    """Signed request. Retries on 429/5xx and network/DNS errors with exp
+    backoff. Default 6 retries = backoffs of ~1,2,4,8,16,32s = ~1 min total
+    retry budget, enough to ride through most DNS blips without the caller
+    crashing. Callers in tight polling loops can pass retries=2 to fast-fail.
+    """
     last_err: Exception | None = None
     for attempt in range(retries + 1):
         try:
@@ -69,7 +73,7 @@ def request(method: str, path: str, params: dict | None = None, *, retries: int 
             last_err = e
             if attempt == retries:
                 break
-            sleep = 2**attempt + random.random()
+            sleep = min(2**attempt + random.random(), 60)
             time.sleep(sleep)
     raise last_err  # type: ignore[misc]
 
