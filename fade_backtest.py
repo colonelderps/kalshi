@@ -14,6 +14,8 @@ Usage:
     python fade_backtest.py --window-sec 600       # tighter exec window (10 min)
     python fade_backtest.py --min-notional 2000    # $2K threshold instead of $1K
     python fade_backtest.py --fee-rate 0.03        # stress-test higher fees
+    python fade_backtest.py --segment "t.price_cents IN (9,19,29,39,49,59,69,79,89,99)" --min-notional 0
+                                                   # backtest a specific hypothesis segment
 """
 from __future__ import annotations
 
@@ -55,21 +57,26 @@ def main() -> int:
     ap.add_argument("--fee-rate", type=float, default=0.02, help="Fee on fade notional")
     ap.add_argument("--exec-source", choices=["public", "social"], default="public",
                     help="Which table to look up next-trade execution prices in")
+    ap.add_argument("--segment", type=str, default="",
+                    help="Extra SQL filter on taker trade, e.g. \"t.price_cents IN (9,19,29,39,49,59,69,79,89,99)\"")
     args = ap.parse_args()
     min_notional_c = args.min_notional * 100
 
     con = db.connect()
 
-    print(f"Selecting big taker trades >= ${args.min_notional} in resolved markets...")
-    big = con.execute("""
+    seg_clause = f"AND ({args.segment})" if args.segment else ""
+    seg_desc = f" matching segment [{args.segment}]" if args.segment else ""
+    print(f"Selecting taker trades >= ${args.min_notional}{seg_desc} in resolved markets...")
+    big = con.execute(f"""
         SELECT t.trade_id, t.ticker, t.created_ts, t.price_cents, t.count_fp,
                t.taker_side, m.result, m.category, m.close_ts
         FROM trades_social t
         JOIN markets m ON m.ticker = t.ticker
         WHERE m.result IN ('yes','no')
           AND t.price_cents * t.count_fp >= ?
+          {seg_clause}
     """, (min_notional_c,)).fetchall()
-    print(f"  {len(big):,} big taker trades found")
+    print(f"  {len(big):,} taker trades found")
 
     totals = defaultdict(float)
     totals["n"] = 0
@@ -188,7 +195,8 @@ def main() -> int:
     # -----------------------------------------------------------------------
     print()
     print("=" * 72)
-    print(f"Config: min_notional=${args.min_notional}  window={args.window_sec}s  fee={args.fee_rate:.0%}")
+    seg_label = f"  segment=[{args.segment}]" if args.segment else ""
+    print(f"Config: min_notional=${args.min_notional}  window={args.window_sec}s  fee={args.fee_rate:.0%}{seg_label}")
     print("=" * 72)
     n = totals["n"]
     execd = totals["executed"]

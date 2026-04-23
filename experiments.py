@@ -402,6 +402,71 @@ GENERATORS: list[dict[str, str]] = [
         "unit": "trade", "metric": "win_rate",
         "segment_expr": "(t.created_ts % 86400) < 21600",
     },
+
+    # -- 2026-04-22 batch: price psychology, category sub-slicing, time-effects --
+    {
+        "key": "trade_price_ends_in_9_roi",
+        "hypothesis": "Trades at prices ending in 9 cents (9,19,29,...,99) earn different ROI.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "t.price_cents IN (9,19,29,39,49,59,69,79,89,99)",
+        "notes": "Charm-pricing / anchoring: do buyers perceive X9c as cheaper than (X+1)0c?",
+    },
+    {
+        "key": "trade_exotics_longshot_roi",
+        "hypothesis": "Exotics-category YES trades under 30c have different ROI.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.category='Exotics' AND t.taker_side='yes' AND t.price_cents < 30",
+        "notes": "Exotics was -12.6% overall; testing whether the loss concentrates in lottery-ticket trades.",
+    },
+    {
+        "key": "trade_commodities_longshot_roi",
+        "hypothesis": "Commodities-category YES trades under 30c have different ROI.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.category='Commodities' AND t.taker_side='yes' AND t.price_cents < 30",
+        "notes": "Commodities was -5.1% overall; same longshot-subslice question as Exotics.",
+    },
+    {
+        "key": "trade_climate_favorite_roi",
+        "hypothesis": "Climate/Weather YES trades above 70c have different ROI.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.category='Climate and Weather' AND t.taker_side='yes' AND t.price_cents >= 70",
+        "notes": "Category net +1.2%; testing whether the edge lives in high-confidence favorites.",
+    },
+    {
+        "key": "trade_sports_underdog_no_roi",
+        "hypothesis": "Sports NO trades at 70c or above (heavy 'won't happen' bet) have different ROI.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.category='Sports' AND t.taker_side='no' AND t.price_cents >= 70",
+        "notes": "Mirror of existing sports-favorite-YES test; captures bettors loading up on negations.",
+    },
+    {
+        "key": "trade_sunday_evening_roi",
+        "hypothesis": "Sunday 22:00-24:00 UTC trades have different ROI.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "strftime('%w',t.created_ts,'unixepoch')='0' AND (t.created_ts%86400) BETWEEN 79200 AND 86400",
+        "notes": "Pre-Monday positioning; distinct from the overnight 0-6 UTC bucket.",
+    },
+    {
+        "key": "trade_month_end_roi",
+        "hypothesis": "Trades in the last 3 days of the calendar month have different ROI.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "CAST(strftime('%d',t.created_ts,'unixepoch') AS INTEGER) >= 28",
+        "notes": "End-of-month cash-flow / rebalance anomaly analogous to equity markets.",
+    },
+    {
+        "key": "trade_medium_horizon_roi",
+        "hypothesis": "Trades placed 1-24h before market close have different ROI.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.close_ts IS NOT NULL AND (m.close_ts - t.created_ts) BETWEEN 3600 AND 86400",
+        "notes": "Fills the gap between existing <1h-before-close and >7d-before-close bands.",
+    },
+    {
+        "key": "trade_yolo_count_roi",
+        "hypothesis": "Trades of only 1 or 2 contracts have different ROI.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "t.count_fp BETWEEN 1 AND 2",
+        "notes": "Single-click impulse sizing; distinct from dollar-weighted tiny_notional test.",
+    },
 ]
 
 
