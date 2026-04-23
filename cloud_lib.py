@@ -88,7 +88,7 @@ def _sign(method: str, path: str) -> dict[str, str]:
     }
 
 
-def request(method: str, path: str, params: dict | None = None, *, retries: int = 4) -> Any:
+def request(method: str, path: str, params: dict | None = None, *, retries: int = 6) -> Any:
     last_err: Exception | None = None
     for attempt in range(retries + 1):
         try:
@@ -107,7 +107,7 @@ def request(method: str, path: str, params: dict | None = None, *, retries: int 
             last_err = e
             if attempt == retries:
                 break
-            time.sleep(2**attempt + random.random())
+            time.sleep(min(2**attempt + random.random(), 60))
     raise last_err  # type: ignore[misc]
 
 
