@@ -1,9 +1,9 @@
 {
-  "cursor": "EhIKEL9oszz7D3IqDJV_8vtdsosaDAiOgMDOBhCQpp-CAg",
-  "earliest_ts": 1775239182,
+  "cursor": "EhIKEEuxPDZzBHxvh1SninFdj6AaDAiI27_OBhC4yaPKAg",
+  "earliest_ts": 1775234440,
   "finished": false,
   "last_rows": 200000,
-  "last_run_ts": 1777507549,
+  "last_run_ts": 1777521624,
   "latest_ts": 1776711861,
   "seeded_from_local_ts": 1776800597
 }
