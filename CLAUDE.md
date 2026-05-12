@@ -93,6 +93,7 @@ Unregister-ScheduledTask -TaskName "KalshiDailyExperiment" -Confirm:$false
 
 ## Gotchas
 
+- **Sports is excluded everywhere by project-wide policy** (2026-05-12). Dave has no domain edge in Sports and the category was drowning out non-Sports signals during analysis. The exclusion is enforced in two places: `_TRADE_ROW_CTE` in `experiments.py` (so every `GENERATORS` hypothesis automatically filters out Sports) and `fade_backtest.py` (default ON, override with `--include-sports`). When adding new analysis scripts, replicate the `AND (m.category IS NULL OR m.category != 'Sports')` filter unless there's a specific reason not to.
 - **`fade_backtest.py` default `--exec-source=public` will show ~1% coverage** if `trades_public` is sparse per-ticker (the backfill walks broadly rather than densifying markets one at a time). Use `--exec-source=social` for realistic coverage while backfill catches up.
 - **GitHub Actions `*/10` crons throttle on public repos** — actual firings are closer to 1 / 45min. That's fine for the backfill math; don't "fix" it.
 - **`experiments.GENERATORS` keys are immutable once released.** Renaming one silently turns past runs into orphans (breaks dedupe) and makes the pair-interaction table reference a ghost. Add a new key instead.

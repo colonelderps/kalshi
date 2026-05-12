@@ -108,6 +108,7 @@ trade_base AS (
     LEFT JOIN markets m ON m.ticker = t.ticker
     WHERE t.taker_social_id != ''
       AND m.result IN ('yes','no')
+      AND (m.category IS NULL OR m.category != 'Sports')  -- project-wide policy: exclude Sports (Dave: "no edge there")
 )
 """
 
@@ -466,6 +467,28 @@ GENERATORS: list[dict[str, str]] = [
         "unit": "trade", "metric": "roi",
         "segment_expr": "t.count_fp BETWEEN 1 AND 2",
         "notes": "Single-click impulse sizing; distinct from dollar-weighted tiny_notional test.",
+    },
+    # -- 2026-05-12: series-level fade candidates (first non-Sports edges to survive concentration audit) --
+    {
+        "key": "series_kxaaagasw_roi",
+        "hypothesis": "Trades in the AAA weekly gas-price series (KXAAAGASW) have different ROI than baseline.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.series_ticker = 'KXAAAGASW'",
+        "notes": "First confirmed fade candidate (2026-05-12). Backtest: fade +5.10% post-2%-fee on $7.5K across 3 weekly closes, all 3 positive. Re-track weekly — needs 8-12 weeks for confidence.",
+    },
+    {
+        "key": "series_kxhormuztrafficw_roi",
+        "hypothesis": "Trades in the Hormuz Strait traffic series (KXHORMUZTRAFFICW) have different ROI than baseline.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.series_ticker = 'KXHORMUZTRAFFICW'",
+        "notes": "Anomaly: takers WIN +37.92% on this series in landscape view. Worth tracking to see if it's information asymmetry (coat-tail) or noise.",
+    },
+    {
+        "key": "series_kxcabout_roi",
+        "hypothesis": "Trades in the KXCABOUT politics series have different ROI than baseline.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.series_ticker = 'KXCABOUT'",
+        "notes": "Same coat-tail anomaly as KXHORMUZTRAFFICW: takers +32.35% in landscape. Track.",
     },
 ]
 

@@ -59,6 +59,8 @@ def main() -> int:
                     help="Which table to look up next-trade execution prices in")
     ap.add_argument("--segment", type=str, default="",
                     help="Extra SQL filter on taker trade, e.g. \"t.price_cents IN (9,19,29,39,49,59,69,79,89,99)\"")
+    ap.add_argument("--include-sports", action="store_true",
+                    help="Override the project-wide Sports exclusion (we don't have edge there; default OFF)")
     args = ap.parse_args()
     min_notional_c = args.min_notional * 100
 
@@ -66,7 +68,9 @@ def main() -> int:
 
     seg_clause = f"AND ({args.segment})" if args.segment else ""
     seg_desc = f" matching segment [{args.segment}]" if args.segment else ""
-    print(f"Selecting taker trades >= ${args.min_notional}{seg_desc} in resolved markets...")
+    sports_clause = "" if args.include_sports else "AND (m.category IS NULL OR m.category != 'Sports')"
+    sports_desc = " (Sports INCLUDED)" if args.include_sports else " (Sports excluded)"
+    print(f"Selecting taker trades >= ${args.min_notional}{seg_desc}{sports_desc} in resolved markets...")
     big = con.execute(f"""
         SELECT t.trade_id, t.ticker, t.created_ts, t.price_cents, t.count_fp,
                t.taker_side, m.result, m.category, m.close_ts
@@ -74,6 +78,7 @@ def main() -> int:
         JOIN markets m ON m.ticker = t.ticker
         WHERE m.result IN ('yes','no')
           AND t.price_cents * t.count_fp >= ?
+          {sports_clause}
           {seg_clause}
     """, (min_notional_c,)).fetchall()
     print(f"  {len(big):,} taker trades found")
