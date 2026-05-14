@@ -16,10 +16,18 @@ if (-not (Test-Path $bat)) {
 
 $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$bat`""
 
-# At-logon trigger only. -AtStartup needs admin; -AtLogOn works as normal user.
-# Machine is on 24/7 and Dave is typically logged in. The .bat has its own
-# auto-restart loop, so we don't need scheduler-level restart settings either.
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+# Three triggers for resilience to Windows-update reboots, mid-day crashes, etc.:
+#   1. AtLogOn — fires when Dave logs in fresh (covers post-reboot)
+#   2. Every 15 min, indefinitely — watchdog; if collector died, this restarts it.
+#      MultipleInstances=IgnoreNew means this is a no-op when collector is healthy.
+#   3. AtStartup — would also help, but requires admin. Skipped.
+$triggerLogon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+
+$triggerRepeat = New-ScheduledTaskTrigger -Once -At (Get-Date)
+$triggerRepeat.Repetition = (New-ScheduledTaskTrigger `
+    -Once -At (Get-Date) `
+    -RepetitionInterval (New-TimeSpan -Minutes 15) `
+    -RepetitionDuration (New-TimeSpan -Days 3650)).Repetition
 
 $settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
@@ -32,9 +40,9 @@ $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interac
 
 Register-ScheduledTask `
     -TaskName "KalshiSocialCollector" `
-    -Description "24/7 collector for the Kalshi /v1/social/trades firehose. Restarts on crash." `
+    -Description "24/7 collector for the Kalshi /v1/social/trades firehose. Self-heals via 15-min watchdog trigger; survives overnight reboots." `
     -Action $action `
-    -Trigger $trigger `
+    -Trigger @($triggerLogon, $triggerRepeat) `
     -Settings $settings `
     -Principal $principal `
     -Force | Out-Null
