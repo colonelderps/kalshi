@@ -7,14 +7,23 @@
 # To check live status: Get-ScheduledTask -TaskName "KalshiSocialCollector" | Get-ScheduledTaskInfo
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$bat  = Join-Path $here "collect_social_continuous.bat"
+$pyw  = Join-Path $here "run_collector.pyw"
 
-if (-not (Test-Path $bat)) {
-    Write-Error "Cannot find $bat"
+if (-not (Test-Path $pyw)) {
+    Write-Error "Cannot find $pyw"
     exit 1
 }
 
-$action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$bat`""
+# Locate pythonw.exe (windowless Python). Falls back to where.exe lookup.
+$pythonw = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Source
+if (-not $pythonw) {
+    Write-Error "pythonw.exe not in PATH. Install Python or add it to PATH."
+    exit 1
+}
+
+# pythonw.exe = NO console window, ever. This eliminates the visible
+# cmd flashes that the old collect_social_continuous.bat approach caused.
+$action = New-ScheduledTaskAction -Execute $pythonw -Argument "`"$pyw`"" -WorkingDirectory $here
 
 # Three triggers for resilience to Windows-update reboots, mid-day crashes, etc.:
 #   1. AtLogOn — fires when Dave logs in fresh (covers post-reboot)
