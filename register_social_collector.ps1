@@ -45,7 +45,12 @@ $settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit (New-TimeSpan -Days 365) `
     -MultipleInstances IgnoreNew
 
-$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+# S4U ("Service For User") logon type: the task runs even when nobody is
+# logged in -- survives reboots without waiting for an interactive login.
+# Needs no stored password and registers without admin. This is the fix for
+# the 2026-05-17 outage where the old Interactive-logon task simply could
+# not run after a reboot until Dave logged in.
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType S4U -RunLevel Limited
 
 Register-ScheduledTask `
     -TaskName "KalshiSocialCollector" `
