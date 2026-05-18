@@ -490,6 +490,28 @@ GENERATORS: list[dict[str, str]] = [
         "segment_expr": "m.series_ticker = 'KXCABOUT'",
         "notes": "Same coat-tail anomaly as KXHORMUZTRAFFICW: takers +32.35% in landscape. Track.",
     },
+    # -- 2026-05-15: two extrapolations of existing promising hypotheses + one novel maker-side test --
+    {
+        "key": "series_aaa_gas_family_roi",
+        "hypothesis": "Trades in the AAA gas-price family (daily, weekly, monthly) have different ROI than baseline.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.series_ticker IN ('KXAAAGASW','KXAAAGASD','KXAAAGASM')",
+        "notes": "Generalization of series_kxaaagasw_roi (currently our only confirmed fade edge). If gas-fade is a real retail-overconfidence-on-consumer-price-data pattern, the daily and monthly variants should mirror the weekly. ~1,500 trades combined across 3 timeframes — bigger sample than weekly alone.",
+    },
+    {
+        "key": "cat_politics_elections_roi",
+        "hypothesis": "Trades in the Politics or Elections category have different ROI than baseline.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.category IN ('Politics','Elections')",
+        "notes": "Extrapolation of KXHORMUZTRAFFICW (+38%) and KXCABOUT (+32%) coat-tail anomalies. If narrow-topic political/geopolitical markets attract MORE informed audiences than retail-broad, the category-level segment should show positive taker ROI — meaning we should coat-tail, not fade.",
+    },
+    {
+        "key": "taker_vs_named_maker_roi",
+        "hypothesis": "Takers facing a named (opt-in social) maker have different ROI than takers facing an anonymous maker.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "t.maker_nickname IS NOT NULL AND t.maker_nickname != ''",
+        "notes": "NOVEL — first maker-side hypothesis. Named makers (5% of trades) may be self-selected sharps systematically picking off retail takers. If segment_roi << baseline_roi, takers are getting bled by named makers — implies maker-side opportunity in active series.",
+    },
 ]
 
 
