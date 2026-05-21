@@ -110,6 +110,17 @@ def main() -> int:
             print(f"[{dt.datetime.now():%H:%M:%S}] poll={polls} batch={len(trades)} "
                   f"new={new} named={named} total_new={total_inserted}")
 
+        # Periodic WAL checkpoint so the write-ahead log can't grow unbounded.
+        # Without this, a long-lived reader elsewhere blocks the passive
+        # auto-checkpoint and the WAL bloats (hit 54GB on 2026-05-18).
+        # Every ~100 polls (~13 min at 8s) try a TRUNCATE checkpoint; it's a
+        # no-op-cheap when the WAL is already small.
+        if polls % 100 == 0:
+            try:
+                con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.OperationalError as e:
+                print(f"[{dt.datetime.now():%H:%M:%S}] checkpoint skipped: {e}")
+
         if args.once:
             break
         time.sleep(args.poll_seconds)
