@@ -35,6 +35,18 @@ python fade_backtest.py --segment "<segment_expr>" --min-notional 0 --exec-sourc
 
 ## Experiments
 
+### 🔥 `series_gas_nearclose_roi` — Gas fade, final hour to close (CURRENT BEST CANDIDATE)
+- **Hypothesis:** Gas-family trades (daily+weekly+monthly) placed within 1h of close have different ROI than baseline.
+- **Rationale:** Sub-slice of the broader gas-family fade. The final-hour window is where "I'm sure gas will clear $4.50" overconfidence peaks — takers pay up for near-certainty that often misses.
+- **Status:** ⚗️ Backtested 2026-05-31 — **survives ex-top-2 audit (first to do so with room), but sample thin**
+- **Backtest command:** `python fade_backtest.py --segment "m.series_ticker IN ('KXAAAGASW','KXAAAGASD','KXAAAGASM') AND m.close_ts IS NOT NULL AND (m.close_ts - t.created_ts) < 3600" --min-notional 0 --exec-source public`
+- **Backtest result (headline):** Fade → **+22.05% post-2% fee** on $11,164 notional (229 fades, 11 distinct markets).
+- **Concentration audit:** Top-2 markets = 83.5% of P&L (high). **BUT ex-top-2: +14.71% post-fee on $2.65K** — first sub-slice to stay clearly positive after removing the luckiest 2. All **3 of 3 close-dates positive** (May-15 +4.4%, May-16 +93.2%, May-23 +25.8%).
+- **Why not deployable yet:** Only **3 close-dates**, and May-23 alone carries $10K of the $11K notional. Promising shape, far too thin to bet. Needs 5-8 more close-dates.
+- **Next step:** `series_gas_nearclose_roi` is in `GENERATORS`; re-audit in ~2 weeks (mid-June) when more close-dates accrue.
+
+---
+
 ### ⛽ `series_kxaaagasw_roi` — Weekly gas-price fade (FIRST SURVIVING EDGE)
 - **Hypothesis:** Trades in the AAA weekly gas-price series (KXAAAGASW) have different ROI than non-Sports baseline.
 - **Rationale:** Retail bettors are systematically miscalibrated on average weekly gas prices. They think they know where gas is going; they don't. The market makes them pay for that miscalibration.
@@ -95,9 +107,13 @@ python fade_backtest.py --segment "<segment_expr>" --min-notional 0 --exec-sourc
 
 ### 🛢️ `series_aaa_gas_family_roi` — Gas family generalization (extrapolation of kxaaagasw)
 - **Hypothesis:** Trades in AAA gas-price family (daily KXAAAGASD + weekly KXAAAGASW + monthly KXAAAGASM) have different ROI than baseline.
-- **Status:** 🔬 Tested 2026-05-15 — **direction right, not significant**
-- **Tested result:** n_seg=131, segment ROI **–74.76%**; baseline –14.26%. Effect –60.50pp, **p=0.493**.
-- **Interpretation:** Mechanism intact (gas takers losing badly), but the named-takers-only filter shrinks the cohort to 131 trades, blowing out the standard error. Will become significant as the local collector adds more named-taker gas data.
+- **Status:** ✅ Backtested 2026-05-31 — **mechanism real, but the edge lives in sub-slices, not family-wide**
+- **Tested result (2026-05-15):** n_seg=131, segment ROI –74.76%; baseline –14.26%. Effect –60.50pp, p=0.493 (named-only cohort too thin to be significant).
+- **Backtest (2026-05-31):** Full family fade → +4.30% raw / **+2.30% post-2% fee** on $52.5K notional (4,587 takers). Survives 2% but flips negative at 5% fees. Family-wide is the WEAKEST framing.
+- **Sub-slice breakdown (where the edge actually concentrates):**
+  - **Favorites >70¢:** +13% post-fee headline BUT **ex-top-2 = –2.91%** → 📉 dead (mirage)
+  - **Final hour (<1h):** +22% post-fee, **ex-top-2 = +14.71%** → 🔥 promoted to its own entry (`series_gas_nearclose_roi`, top of doc)
+- **Verdict:** Don't trade the family flat. The final-hour sub-slice is the live candidate; favorites-fade is dead.
 
 ---
 

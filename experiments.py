@@ -512,6 +512,14 @@ GENERATORS: list[dict[str, str]] = [
         "segment_expr": "t.maker_nickname IS NOT NULL AND t.maker_nickname != ''",
         "notes": "NOVEL — first maker-side hypothesis. Named makers (5% of trades) may be self-selected sharps systematically picking off retail takers. If segment_roi << baseline_roi, takers are getting bled by named makers — implies maker-side opportunity in active series.",
     },
+    # -- 2026-05-31: best-surviving sub-slice of the gas-family fade --
+    {
+        "key": "series_gas_nearclose_roi",
+        "hypothesis": "Gas-family trades placed within 1h of close have different ROI than baseline.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.series_ticker IN ('KXAAAGASW','KXAAAGASD','KXAAAGASM') AND m.close_ts IS NOT NULL AND (m.close_ts - t.created_ts) < 3600",
+        "notes": "BEST-LOOKING CANDIDATE as of 2026-05-31. Backtest: fade +22.05% post-2%-fee on $11K notional, and crucially STILL +14.71% post-fee after removing top-2 markets (first sub-slice to survive ex-top-2). All 3 close-dates positive. BUT thin: only 11 distinct markets, 3 close-dates, May-23 carries $10K of $11K notional. Needs 5-8 more close-dates to confirm. Do NOT deploy yet.",
+    },
 ]
 
 
