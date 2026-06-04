@@ -11,7 +11,8 @@ A whale-tracker / research pipeline for Kalshi prediction markets. Continuously 
 Data collection runs in **GitHub Actions**. Analysis runs **locally** against a single SQLite file. They are stitched together through the git repo itself.
 
 ```
-Kalshi API ──▶ GitHub Actions (3 workflows) ──▶ data/<stream>/*.jsonl.gz (committed)
+Kalshi API ──▶ GitHub Actions (public streams) ──▶ data/<stream>/*.jsonl.gz (committed)
+   │              [social stream is LOCAL-ONLY — see note below]
                                                          │
                                                          ▼
                                        local box:  git pull  +  sync_from_cloud.py
@@ -24,8 +25,17 @@ Kalshi API ──▶ GitHub Actions (3 workflows) ──▶ data/<stream>/*.json
 ```
 
 - Cloud collectors write gzipped JSONL (not SQLite — binary diffs would bloat git). State files under `data/<stream>/state.json` carry resume cursors between runs.
-- Three cloud streams run on independent `*/10` cron schedules and **race to push to master**. Each workflow uses a `concurrency` group + a rebase-push loop (5 retries) in the commit step. When editing these workflows, preserve that pattern.
+- Cloud streams run on independent cron schedules and **race to push to master**. Each workflow uses a `concurrency` group + a rebase-push loop (5 retries) in the commit step. When editing these workflows, preserve that pattern.
 - The local `sync_from_cloud.py` is idempotent (`INSERT OR IGNORE`). It's fine to run whenever.
+
+### Social collection is LOCAL-ONLY (2026-06-04)
+
+**The cloud `tail_social` workflow is `disabled_manually` — do not re-enable it.** Social trades are collected by the **local** `KalshiSocialCollector` Windows task (`run_collector.pyw` → `collect_social.py`, 8s polling, writes the DB directly). Reasons it won the bake-off:
+- Local has ~100% uptime on Dave's always-on box; cloud is throttled to ~1 run / 45min on public repos.
+- The cloud `tail_social` job was *cancelling before its commit step* (collected 266s of trades, then "operation canceled" wiped the buffer → no JSONL committed → nothing to sync). Running both also risked dedupe confusion.
+- Local task is hardened: S4U logon (survives reboots, no login needed), 15-min watchdog trigger, hang-detection in the wrapper, periodic WAL checkpoint.
+
+`tail_public` and `backfill_public` stay **active** in the cloud — they feed `trades_public` (the anonymized firehose with historical backfill depth), which has no local collector. Only social was duplicated.
 
 ## Two trade tables, two purposes
 
