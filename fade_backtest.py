@@ -25,6 +25,11 @@ from collections import defaultdict
 import db
 
 
+def safe_div(num: float, den: float) -> float | None:
+    """Ratio guarded against a zero denominator (returns None -> prints as '--')."""
+    return num / den if den else None
+
+
 def fmt_pct(x: float | None, signed: bool = True) -> str:
     if x is None:
         return "   --  "
@@ -205,14 +210,26 @@ def main() -> int:
     print("=" * 72)
     n = totals["n"]
     execd = totals["executed"]
+    fade_notional = totals["fade_notional"]
     print(f"Big taker trades:      {int(n):>6,}")
-    print(f"With fade execution:   {int(execd):>6,}  ({execd/n:.1%} coverage)")
+    cov = safe_div(execd, n)
+    print(f"With fade execution:   {int(execd):>6,}  ({cov*100:.1f}% coverage)" if cov is not None
+          else f"With fade execution:   {int(execd):>6,}  (no takers in segment)")
     print()
-    print(f"Taker side ROI:        {fmt_pct(totals['taker_pnl']/totals['taker_notional'])}  "
+    print(f"Taker side ROI:        {fmt_pct(safe_div(totals['taker_pnl'], totals['taker_notional']))}  "
           f"pnl={fmt_money(totals['taker_pnl'])}  notional={fmt_money(totals['taker_notional'])}")
-    print(f"Fade side ROI (raw):   {fmt_pct(totals['fade_pnl']/totals['fade_notional'])}  "
-          f"pnl={fmt_money(totals['fade_pnl'])}  notional={fmt_money(totals['fade_notional'])}")
-    print(f"Fade side ROI (-fee):  {fmt_pct(totals['fade_pnl_adj']/totals['fade_notional'])}  "
+    if not fade_notional:
+        print("Fade side ROI:         --   (0% fade coverage: no next-trade execution found in "
+              f"trades_{args.exec_source} within {args.window_sec}s -- cannot backtest a fade here)")
+        print("                       Tip: try --exec-source social, a larger --window-sec, or treat "
+              "this as a coat-tail (not fade) candidate.")
+        slice_report("category", by_category)
+        slice_report("taker price bucket", by_price_bucket)
+        slice_report("time-to-close", by_time_to_close)
+        return 0
+    print(f"Fade side ROI (raw):   {fmt_pct(safe_div(totals['fade_pnl'], fade_notional))}  "
+          f"pnl={fmt_money(totals['fade_pnl'])}  notional={fmt_money(fade_notional)}")
+    print(f"Fade side ROI (-fee):  {fmt_pct(safe_div(totals['fade_pnl_adj'], fade_notional))}  "
           f"pnl={fmt_money(totals['fade_pnl_adj'])}")
 
     slice_report("category", by_category)
@@ -220,10 +237,10 @@ def main() -> int:
     slice_report("time-to-close", by_time_to_close)
 
     # Fee sensitivity at the top level
-    print(f"\n--- fee sensitivity (raw fade ROI is {totals['fade_pnl']/totals['fade_notional']*100:+.2f}%) ---")
+    print(f"\n--- fee sensitivity (raw fade ROI is {totals['fade_pnl']/fade_notional*100:+.2f}%) ---")
     for f in [0.0, 0.01, 0.02, 0.03, 0.05, 0.08]:
         # Need to recompute since we only have one snapshot; use simple subtraction
-        adj = (totals["fade_pnl"] - f * totals["fade_notional"]) / totals["fade_notional"]
+        adj = (totals["fade_pnl"] - f * fade_notional) / fade_notional
         print(f"  fee={f:>4.0%}  ->  ROI={adj*100:+6.2f}%")
 
     return 0
