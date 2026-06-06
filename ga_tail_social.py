@@ -137,4 +137,16 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as e:  # noqa: BLE001
+        if cloud_lib.is_transient_block(e):
+            # Transient upstream block (Kalshi CDN 403 / rate-limit / 5xx /
+            # network). Not our bug, no data lost -- watermark didn't advance,
+            # so the next run recovers the gap. Exit 0 to avoid a noise
+            # "workflow failed" email. (Note: this workflow is disabled; local
+            # collector is the social source. Kept consistent for parity.)
+            print(f"[soft-skip] transient upstream block: {type(e).__name__}: "
+                  f"{str(e)[:160]} -- exiting 0", flush=True)
+            sys.exit(0)
+        raise

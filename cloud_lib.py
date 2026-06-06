@@ -115,6 +115,32 @@ def get(path: str, params: dict | None = None) -> Any:
     return request("GET", path, params)
 
 
+def is_transient_block(err: BaseException) -> bool:
+    """True for errors that are external + transient (so a collector run should
+    soft-skip and exit 0 rather than email a hard failure). The next scheduled
+    run + the backfill cursor recover whatever window was missed.
+
+    Covers:
+      - network errors (requests.RequestException)
+      - rate limits / upstream 5xx (429, 500-504)
+      - CloudFront/WAF 403s: Kalshi's CDN intermittently blocks the shared
+        GitHub-runner IPs and returns an HTML error page ("The request could
+        not be satisfied"), NOT Kalshi's normal JSON. A real auth 403 returns
+        JSON, so the HTML-body check keeps genuine credential failures fatal.
+    """
+    if isinstance(err, requests.RequestException):
+        return True
+    if isinstance(err, KalshiError):
+        if err.status in (429, 500, 502, 503, 504):
+            return True
+        if err.status == 403:
+            body = str(err.body).lower()
+            return any(s in body for s in (
+                "could not be satisfied", "<!doctype", "<html", "cloudfront"
+            ))
+    return False
+
+
 # ---------------------------------------------------------------------------
 # JSONL-gz output + state
 # ---------------------------------------------------------------------------
