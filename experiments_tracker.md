@@ -2,135 +2,79 @@
 
 Lightweight registry of hypotheses we've tested, their results, and whether we've taken them through a **realistic backtest** (not just a segment-vs-complement stat test).
 
-The `experiments` DB table is the source of truth for raw results. This doc is the curated view: what was promising, what got confirmed by a P&L sim, and what's dead.
+The `experiments` DB table is the source of truth for raw results. This doc is the curated view — **trimmed 2026-06-08 to the three strongest live candidates.** Everything previously tested-and-killed (Sports mirages, weekly gas fade at scale, gas favorites, midrange, overnight-ET overlap, named-maker, CABOUT/Hormuz standalone, tier-favorite look-ahead) lives in git history.
 
 ## Status legend
 - 🔬 **Tested** — ran through the `daily_experiment.py` framework (two-sample test on resolved trades)
 - ⚗️ **Backtest pending** — flagged as interesting; realistic P&L sim not yet run
-- ✅ **Backtested** — run through `fade_backtest.py --segment ...` or equivalent; edge confirmed
-- 📉 **Dead** — backtested and failed, or segmented and shown to be noise
+- ✅ **Backtested** — survived a realistic P&L sim + concentration audit
+- 📉 **Dead** — backtested and failed, or shown to be noise
 
 ## 🚨 Project policy: Sports excluded
 
-As of 2026-05-12, **Sports is excluded project-wide**. Dave has no domain edge there, and the category was drowning out non-Sports signals. Every prior "edge" we found in Sports turned out to be the same two NBA upsets on 2026-04-20 (DEN-MIN, NYK-ATL) — every Sports-flavored hypothesis collapsed once we either excluded those two games or re-ran at a larger sample.
+As of 2026-05-12, **Sports is excluded project-wide** (Dave has no domain edge there; the category drowned out everything else and produced only 2-NBA-game mirages). Enforced in `experiments.py:_TRADE_ROW_CTE` and both backtesters (`--include-sports` to override).
 
-**Policy enforcement:**
-- `experiments.py` `_TRADE_ROW_CTE` filters out Sports — all `GENERATORS` hypotheses implicitly exclude it
-- `fade_backtest.py` excludes Sports by default (`--include-sports` flag if ever needed)
-- This doc only tracks non-Sports findings going forward
-
-Historical Sports entries have been scrubbed from this tracker — git history preserves them if ever needed.
-
-## Running a backtest
+## The two backtesters
 
 ```bash
-# General pattern: run fade_backtest with the segment SQL from the hypothesis
-python fade_backtest.py --segment "<segment_expr>" --min-notional 0 --exec-source social
+# Fade (bet AGAINST the taker) — for segments where takers lose:
+python fade_backtest.py --segment "<sql>" --min-notional 0 --exec-source public
+
+# Coat-tail (COPY the taker) — for segments where takers win:
+python coat_tail_backtest.py --segment "<sql>" --exec-source social
 ```
 
-`--min-notional 0` removes the whale-size floor — most hypotheses aren't about size.
-`--exec-source social` avoids the trades_public sparsity issue (see CLAUDE.md).
+Both simulate entry at the next trade's price and include the concentration audit (top-2-market P&L share, ex-top-2 ROI, per-close-date breakdown). **An edge is only real if it survives ex-top-2 AND has majority-positive close-dates across multiple weeks.**
 
 ---
 
-## Experiments
+## The three live candidates (2026-06-08)
 
-### 🔥 `series_gas_nearclose_roi` — Gas fade, final hour to close (CURRENT BEST CANDIDATE)
-- **Hypothesis:** Gas-family trades (daily+weekly+monthly) placed within 1h of close have different ROI than baseline.
-- **Rationale:** Sub-slice of the broader gas-family fade. The final-hour window is where "I'm sure gas will clear $4.50" overconfidence peaks — takers pay up for near-certainty that often misses.
-- **Status:** ⚗️ Backtested 2026-05-31 — **survives ex-top-2 audit (first to do so with room), but sample thin**
+### 🥇 `cat_politics_elections_coattail` — COPY Politics/Elections takers
+- **Hypothesis:** Takers in Politics + Elections markets are informed; copying their trades at the next print is +EV.
+- **Mechanism:** Consistent with the 2026 insider-trading wave (DOJ/CFTC Polymarket-Maduro indictment, Kalshi's 400+ flagged trades). Entry slippage confirms it: price runs toward the taker's side right after they print (Hormuz +18.9¢, Elections +10¢) — informed-flow signature.
+- **Status:** ✅ Backtested 2026-06-08 — **first candidate to clear every bar at once**
+- **Backtest command:** `python coat_tail_backtest.py --segment "m.category IN ('Politics','Elections')" --exec-source social`
+- **Headline:** **+56.76% post-2%-fee** on $8,983 notional (392 coat-tail entries, 52.6% coverage). Takers themselves: +76.27%.
+- **Concentration audit (all PASS):**
+  - 22 distinct markets; top-2 = 62.7% of P&L (elevated but not fatal)
+  - **Ex-top-2: +25.31% post-fee on $7.2K** — survives with margin
+  - **4 of 4 close-dates positive — spanning April AND May** (04-20 +186%, 04-21 +37%, 05-20 +17%, 05-27 +24%). NOT the April-mirage pattern.
+- **Sub-slices:** works in favorites (+43% post-fee at >70¢) AND longshots (+50%); best window 1-24h pre-close (+35%) and <1h (+143%, smaller n).
+- **Fee sensitivity:** +50.76% even at 8% fees. Extremely forgiving.
+- **Caveats:** modest notional ($9K over ~6 weeks), 52% coverage, and the April cluster still contributes 2 of 4 dates. Want 8+ close-dates before sizing.
+- **Next steps:** (1) keep accumulating — every politics/elections close adds a data point; (2) slice by sub-series as n grows; (3) legal review before any live deployment (coat-tailing suspected-informed flow is a regulatory grey zone — see 2026 enforcement wave).
+
+### 🥈 `series_gas_nearclose_roi` — FADE gas-family takers in the final hour
+- **Hypothesis:** Gas-price-market takers (KXAAAGASW/D/M) trading within 1h of close are overconfident; fading them is +EV.
+- **Mechanism:** "I'm sure gas clears $4.50" near-certainty buying at the deadline; the classic retail overconfidence pathology, concentrated where it peaks.
+- **Status:** ⚗️ Backtested 2026-05-31, re-confirmed 2026-06-05 — survives ex-top-2, sample still thin
 - **Backtest command:** `python fade_backtest.py --segment "m.series_ticker IN ('KXAAAGASW','KXAAAGASD','KXAAAGASM') AND m.close_ts IS NOT NULL AND (m.close_ts - t.created_ts) < 3600" --min-notional 0 --exec-source public`
-- **Backtest result (headline):** Fade → **+22.05% post-2% fee** on $11,164 notional (229 fades, 11 distinct markets).
-- **Concentration audit:** Top-2 markets = 83.5% of P&L (high). **BUT ex-top-2: +14.71% post-fee on $2.65K** — first sub-slice to stay clearly positive after removing the luckiest 2. All **3 of 3 close-dates positive** (May-15 +4.4%, May-16 +93.2%, May-23 +25.8%).
-- **Why not deployable yet:** Only **3 close-dates**, and May-23 alone carries $10K of the $11K notional. Promising shape, far too thin to bet. Needs 5-8 more close-dates.
-- **Next step:** `series_gas_nearclose_roi` is in `GENERATORS`; re-audit in ~2 weeks (mid-June) when more close-dates accrue.
+- **Headline:** **+22.05% post-2%-fee** on $11,164 notional (229 fades, 30.1% coverage). Takers: –42.72%.
+- **Concentration audit:** 11 markets; top-2 = 83.5% (high). **Ex-top-2: +14.71% post-fee** — survives. 3 of 3 close-dates positive (05-15, 05-16, 05-23).
+- **Caveats:** only 3 close-dates; 05-23 carries $10K of $11K notional; numbers unchanged since 05-31 because few gas markets have resolved since. **Verdict expected ~mid-June** as more closes land.
+- **Note:** the broader gas-family fade (all hours) is only +2.80% post-fee and the weekly-series-only version DIED at scale (–1.05% on 2,479 takers). The final-hour slice is the only gas framing still alive.
+
+### 🥉 `trade_midrange_roi` — FADE midrange-price (40-60¢) takers (weak, watch-only)
+- **Hypothesis:** Non-Sports takers at 40-60¢ (maximum-uncertainty pricing) lose more than baseline; fading them is mildly +EV.
+- **Status:** 🔬 Tested 2026-05-15 (effect –45.7pp, p=2e-5), backtested 2026-06-05: **+2.35% post-2%-fee** on $7.2K (14.1% coverage). Takers: –39.73%.
+- **Why it's still here:** the segment-test effect is large and highly significant, and the fade stays positive post-fee — but the margin is thin (dies at 5% fees) and the per-market concentration hasn't been audited at the current sample. Third place by default: everything else is dead.
+- **Next:** concentration audit + re-run when sample grows. Promote or kill by end of June.
 
 ---
 
-### ⛽ `series_kxaaagasw_roi` — Weekly gas-price fade (FIRST SURVIVING EDGE)
-- **Hypothesis:** Trades in the AAA weekly gas-price series (KXAAAGASW) have different ROI than non-Sports baseline.
-- **Rationale:** Retail bettors are systematically miscalibrated on average weekly gas prices. They think they know where gas is going; they don't. The market makes them pay for that miscalibration.
-- **Tested:** landscape survey 2026-05-12. 779 resolved takers, **taker ROI –41.78%** on $20K notional. Spread across 22 days (the only non-Sports series with real temporal diversity in current sample).
-- **Status:** ✅ Backtested 2026-05-12 — **fade edge confirmed, survives concentration audit**
-- **Backtest command:** `python fade_backtest.py --segment "m.series_ticker = 'KXAAAGASW'" --min-notional 0 --exec-source public`
-- **Backtest result (headline):** Fade takers → **+5.10% post-2% fee** on $7,523 fade notional (221 fade trades, 28.4% exec coverage). Survives all fee scenarios up to 5%.
-- **Per-close-date breakdown (the key concentration check — all 3 positive):**
-  | Close week | trades | fade ROI |
-  |---|---|---|
-  | 2026-04-27 | 49 | **+18.89%** |
-  | 2026-05-04 | 81 | **+6.56%** |
-  | 2026-05-11 | 91 | **+5.92%** |
-  Unlike every prior "edge" we found, this isn't dominated by a single weekend.
-- **Concentration audit:** Top 2 markets = 61.4% of P&L (high but not fatal). **Ex-top-2: +4.06% raw / +2.06% post-2% fee on $5K notional.** The edge stays positive after stripping the top markets — first time we've seen this.
-- **Fee sensitivity:** +7.10% raw → +5.10% at 2% → +2.10% at 5%. Tight; needs Kalshi's actual fee curve verified before deployment.
-- **Actionable strategy:** **Fade KXAAAGASW takers** — when a taker hits, immediately buy the opposite side at the next public-trade price. Hold to weekly settlement.
-- **Caveats:**
-  - Only 3 weekly closes of data — need 8-12 for statistical confidence
-  - $7.5K total fade notional → small deployable size per week
-  - 28.4% execution coverage means many trades have no fadeable next print within 1h
-- **Next steps:** (1) Paper-trade the next 4-6 weekly closes (May 18, 25, Jun 1, 8). (2) Watch daily-experiment runs — `series_kxaaagasw_roi` is in `GENERATORS` and will retest each cycle. (3) If 8 consecutive weeks stay positive at >+3% post-fee, consider small live deployment.
+## Graveyard (one-liners; details in git history)
+
+- **All Sports edges** (favorite-YES, underdog-NO, charm, huge-notional, near-close, overnight, integer-count): 2 NBA upsets on 2026-04-20 in costume. Policy exclusion since 2026-05-12.
+- **Tier-favorite "+30% EV":** look-ahead bias (used full-period avg price for entry). Realistic timing → ~0%.
+- **Extreme-tier longshot buyers:** –88% EV (favorite-longshot bias, textbook), shorting them needs a giant bankroll — not interesting.
+- **Weekly gas fade (`series_kxaaagasw_roi`):** +5.1% at n=779 → **–1.05%** at n=2,479. Died at scale.
+- **Gas favorites >70¢:** +13% headline, **–2.91% ex-top-2**. Mirage.
+- **Overnight-ET fade:** +18.9% headline but it's just the gas-nearclose trades wearing a time-of-day costume.
+- **Named-maker predation:** rejected — takers facing named makers do *better* (+22pp, n=42).
+- **CABOUT standalone:** +468% taker ROI but 1 close-date, 9 markets. Hormuz standalone: **ex-top-2 = –32%**. Both subsumed into the category-level coat-tail (#1).
+- **Tiny-notional, large-round-count, climate-favorite, politics-fade:** dead in week-1 backtests.
 
 ---
 
-### 📊 `trade_midrange_roi` — Midrange-price (40-60¢) fade (NEW, post-Sports-exclusion)
-- **Hypothesis:** Trades placed at midrange prices (40-60¢) have different ROI than non-midrange.
-- **Status:** 🔬 Tested 2026-05-15 (re-run after Sports exclusion) — **needs concentration audit before promoting**
-- **Tested result:** n_seg=473, segment ROI **–49.66%**; n_base=1,721, baseline ROI –4.00%. Effect **–45.67pp**, p=2.14e-5.
-- **Why this is interesting:** This was previously *positive* effect (+20.5%) in the Sports-included sample — Sports midrange-favorites were earning. With Sports excluded, midrange takers in everything-else are getting crushed. **Direction flipped + became highly significant.**
-- **Caveat:** Need per-day concentration check next. If 1-2 events drive the P&L (the recurring pattern), demote to "needs more sample." If diversified, this is candidate #2.
-
----
-
-### 🌙 `trade_overnight_et_roi` — Overnight ET fade (NEW, post-Sports-exclusion)
-- **Hypothesis:** Trades placed during 00:00-06:00 UTC (~early-morning ET) have different ROI than rest-of-day.
-- **Status:** 🔬 Tested 2026-05-15 — **modest effect, statistically clean, concentration check pending**
-- **Tested result:** n_seg=366, segment ROI –25.70%; n_base=1,828, baseline ROI –15.49%. Effect **–10.22pp**, p=0.003.
-- **Note:** Smaller effect than midrange but still in fade direction. Becomes significant with the bigger sample.
-
----
-
-### 🕊️ `series_kxhormuztrafficw_roi` — Hormuz Strait traffic (coat-tail anomaly)
-- **Hypothesis:** Trades in KXHORMUZTRAFFICW (Strait of Hormuz weekly traffic) have different ROI than baseline.
-- **Status:** 📉 Flagged then demoted 2026-05-15 — **2-market mirage**
-- **Original finding:** Landscape survey showed takers **WIN +37.92%** on this series. Re-test under `cat_politics_elections_roi` showed +66% segment ROI at p<0.001 (n=66).
-- **Concentration check:** $724 of $594 net P&L (122%, with everything else net-negative) came from **two markets in the Hormuz series resolving on 2026-04-19** (T80 and T60). Without those 2 markets the segment is net-negative.
-- **Verdict:** Same April-20/21 concentration pattern as the Sports findings. Re-test when we have more event-days of politics data (~2-3 more weeks with the local collector firehose).
-
----
-
-### 🗳️ `series_kxcabout_roi` — KXCABOUT politics (coat-tail anomaly)
-- **Hypothesis:** Trades in KXCABOUT politics series have different ROI than baseline.
-- **Status:** 🔬 Flagged 2026-05-12 — needs coat-tail backtest at larger sample
-- **Notes:** Landscape showed takers +32.35%. Same caveat as Hormuz (thin sample, likely 1-2 events driving). Defer until firehose accumulates more politics trades.
-
----
-
-### 🛢️ `series_aaa_gas_family_roi` — Gas family generalization (extrapolation of kxaaagasw)
-- **Hypothesis:** Trades in AAA gas-price family (daily KXAAAGASD + weekly KXAAAGASW + monthly KXAAAGASM) have different ROI than baseline.
-- **Status:** ✅ Backtested 2026-05-31 — **mechanism real, but the edge lives in sub-slices, not family-wide**
-- **Tested result (2026-05-15):** n_seg=131, segment ROI –74.76%; baseline –14.26%. Effect –60.50pp, p=0.493 (named-only cohort too thin to be significant).
-- **Backtest (2026-05-31):** Full family fade → +4.30% raw / **+2.30% post-2% fee** on $52.5K notional (4,587 takers). Survives 2% but flips negative at 5% fees. Family-wide is the WEAKEST framing.
-- **Sub-slice breakdown (where the edge actually concentrates):**
-  - **Favorites >70¢:** +13% post-fee headline BUT **ex-top-2 = –2.91%** → 📉 dead (mirage)
-  - **Final hour (<1h):** +22% post-fee, **ex-top-2 = +14.71%** → 🔥 promoted to its own entry (`series_gas_nearclose_roi`, top of doc)
-- **Verdict:** Don't trade the family flat. The final-hour sub-slice is the live candidate; favorites-fade is dead.
-
----
-
-### 🏛️ `cat_politics_elections_roi` — Politics/Elections coat-tail (extrapolation)
-- **Hypothesis:** Politics + Elections category trades have different (positive) ROI vs baseline.
-- **Status:** 📉 Significant at face value, **2-market mirage** on inspection (2026-05-15)
-- **Tested result:** n_seg=66, segment ROI **+66.10%**; baseline –20.07%. Effect **+86.17pp**, p=1.03e-6.
-- **Concentration:** Same Hormuz T80/T60 markets drive 122% of P&L (rest net-negative). Not yet trustable.
-
----
-
-### 🛒 `taker_vs_named_maker_roi` — Named makers prey on takers (NOVEL maker-side test)
-- **Hypothesis:** Takers facing a named (opt-in social) maker lose more than takers facing anonymous makers.
-- **Status:** 📉 Tested 2026-05-15 — **hypothesis rejected at face value**
-- **Tested result:** n_seg=42, segment ROI **+3.17%**; baseline –19.14%. Effect **+22.31pp** (wrong direction), p=0.315.
-- **Interpretation:** Takers facing named makers actually do *slightly better* than facing anonymous makers. Either (a) named makers are recreational not predatory, or (b) n=42 is too small. Re-run at larger sample before final verdict.
-
----
-
-_Add new experiments above this line as they surface._
+_Add new experiments above the graveyard as they surface._
