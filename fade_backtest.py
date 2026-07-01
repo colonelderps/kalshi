@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from datetime import datetime, timezone
 
 import db
 
@@ -95,6 +96,8 @@ def main() -> int:
     by_category = defaultdict(lambda: defaultdict(float))
     by_price_bucket = defaultdict(lambda: defaultdict(float))
     by_time_to_close = defaultdict(lambda: defaultdict(float))
+    per_market = defaultdict(lambda: {"cost": 0.0, "pnl": 0.0})       # concentration audit
+    per_close_date = defaultdict(lambda: {"cost": 0.0, "pnl": 0.0, "n": 0})
 
     def bump(buckets, key, field, val):
         buckets[key][field] += val
@@ -200,6 +203,13 @@ def main() -> int:
             buckets[key]["fade_pnl"] += fade_pnl
             buckets[key]["fade_pnl_adj"] += fade_pnl_adj
 
+        per_market[r["ticker"]]["cost"] += fade_cost
+        per_market[r["ticker"]]["pnl"] += fade_pnl
+        d = datetime.fromtimestamp(r["close_ts"], timezone.utc).strftime("%Y-%m-%d") if r["close_ts"] else "?"
+        per_close_date[d]["cost"] += fade_cost
+        per_close_date[d]["pnl"] += fade_pnl
+        per_close_date[d]["n"] += 1
+
     # -----------------------------------------------------------------------
     # Print
     # -----------------------------------------------------------------------
@@ -242,6 +252,34 @@ def main() -> int:
         # Need to recompute since we only have one snapshot; use simple subtraction
         adj = (totals["fade_pnl"] - f * fade_notional) / fade_notional
         print(f"  fee={f:>4.0%}  ->  ROI={adj*100:+6.2f}%")
+
+    # Concentration audit -- the make-or-break filter. An edge is only real if
+    # it survives removing the top-2 markets AND is majority-positive across
+    # distinct close-dates.
+    print("\n--- concentration audit ---")
+    mkts = sorted(per_market.values(), key=lambda m: -m["pnl"])
+    total_pnl = sum(m["pnl"] for m in mkts)
+    print(f"  distinct markets: {len(mkts)}")
+    if total_pnl != 0 and len(mkts) >= 2:
+        top2 = mkts[0]["pnl"] + mkts[1]["pnl"]
+        print(f"  top-2 markets drive: {top2/total_pnl*100:.1f}% of P&L")
+        ex = mkts[2:]
+        ex_cost = sum(m["cost"] for m in ex)
+        ex_pnl = sum(m["pnl"] for m in ex)
+        if ex_cost:
+            print(f"  EX-top-2: notional={fmt_money(ex_cost)}  ROI={ex_pnl/ex_cost*100:+.2f}%  "
+                  f"(-{args.fee_rate:.0%} fee: {(ex_pnl - ex_cost*args.fee_rate)/ex_cost*100:+.2f}%)")
+    pos = neg = 0
+    print("  per close-date:")
+    for d in sorted(per_close_date.keys()):
+        s = per_close_date[d]
+        if s["cost"] < 100:
+            continue
+        roi = s["pnl"] / s["cost"] * 100
+        pos, neg = (pos + 1, neg) if roi > 0 else (pos, neg + 1)
+        print(f"    {d}  n={s['n']:>4}  notional={fmt_money(s['cost'])}  ROI={roi:>+8.1f}%")
+    print(f"  close-dates positive: {pos}  negative: {neg}  "
+          f"-> {'PASS' if pos > neg else 'FAIL'} (majority-positive)")
 
     return 0
 
