@@ -518,7 +518,48 @@ GENERATORS: list[dict[str, str]] = [
         "hypothesis": "Gas-family trades placed within 1h of close have different ROI than baseline.",
         "unit": "trade", "metric": "roi",
         "segment_expr": "m.series_ticker IN ('KXAAAGASW','KXAAAGASD','KXAAAGASM') AND m.close_ts IS NOT NULL AND (m.close_ts - t.created_ts) < 3600",
-        "notes": "BEST-LOOKING CANDIDATE as of 2026-05-31. Backtest: fade +22.05% post-2%-fee on $11K notional, and crucially STILL +14.71% post-fee after removing top-2 markets (first sub-slice to survive ex-top-2). All 3 close-dates positive. BUT thin: only 11 distinct markets, 3 close-dates, May-23 carries $10K of $11K notional. Needs 5-8 more close-dates to confirm. Do NOT deploy yet.",
+        "notes": "BEST-LOOKING CANDIDATE as of 2026-05-31. Backtest: fade +22.05% post-2%-fee on $11K notional, and crucially STILL +14.71% post-fee after removing top-2 markets (first sub-slice to survive ex-top-2). All 3 close-dates positive. BUT thin: only 11 distinct markets, 3 close-dates, May-23 carries $10K of $11K notional. Needs 5-8 more close-dates to confirm. Do NOT deploy yet. UPDATE 2026-07-01: re-validated at scale (65 close-days) -- holds, +12.34% post-fee, ex-top-2 +11.29%, 33 close-dates (23+/10-). This is the ONE validated live candidate; kalshi_trading.py built around it.",
+    },
+    # -- 2026-07-01: five new hypotheses derived from what survived/died above --
+    # Learning A (from series_gas_nearclose_roi surviving at scale): retail
+    # overconfidence in the final hour before a recurring-threshold market
+    # closes is a REAL, non-mirage mechanism. #1-#3 test whether it
+    # generalizes beyond gas specifically, and whether it concentrates by size.
+    # Learning B (from cat_politics_elections_roi collapsing at scale): the
+    # taker-side edge in politics/geopolitics is real (+223% ROI) but decays
+    # to worthless within one trade of slippage (0.5c -> 35c as sample grew).
+    # #4 (backtest-only, no GENERATORS entry -- see notes) tests whether a much
+    # faster reaction window preserves any of it before full price discovery.
+    # Learning C (from taker_vs_named_maker_roi's rejection): named/social-
+    # visible participants behave differently than anonymous ones. #5 combines
+    # this with the validated near-close mechanism.
+    {
+        "key": "cat_economics_nearclose_roi",
+        "hypothesis": "Any Economics-category trade (not just gas) placed within 1h of market close has different ROI than baseline.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.category = 'Economics' AND m.close_ts IS NOT NULL AND (m.close_ts - t.created_ts) < 3600",
+        "notes": "Generalization test for series_gas_nearclose_roi: is near-close overconfidence a gas-specific quirk, or does it apply to ANY recurring-threshold Economics market? 65 close-days of Economics data available (2026-07-01) -- the deepest non-Sports category we have, good power for this test.",
+    },
+    {
+        "key": "cat_crypto_nearclose_roi",
+        "hypothesis": "Crypto-category trades (BTC/ETH price-threshold markets) placed within 1h of market close have different ROI than baseline.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.category = 'Crypto' AND m.close_ts IS NOT NULL AND (m.close_ts - t.created_ts) < 3600",
+        "notes": "Second generalization test: does near-close overconfidence show up in Crypto's recurring daily price-threshold markets (KXBTCD etc.) the same way it does in gas? CAVEAT going in: Crypto resolved-social data is only 2 distinct close-days as of 2026-07-01 -- the exact concentration-trap shape that killed several earlier candidates. Treat any positive result here as unconfirmed until more close-days accrue, same as everything else was.",
+    },
+    {
+        "key": "trade_gas_nearclose_bignotional_roi",
+        "hypothesis": "Large (>= $15 notional) gas-family trades within 1h of close have different ROI than the pooled near-close population.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.series_ticker IN ('KXAAAGASW','KXAAAGASD','KXAAAGASM') AND m.close_ts IS NOT NULL AND (m.close_ts - t.created_ts) < 3600 AND t.price_cents * t.count_fp >= 1500",
+        "notes": "Refines the validated series_gas_nearclose_roi by size. Gas-nearclose notional is tiny overall (p50=$3.06, p75=$7.48, p90=$19.88 as of 2026-07-01) -- $15 is roughly the 85th percentile for THIS population, not the $1000 'whale' threshold used elsewhere (wrong scale here). Tests whether bigger near-close bets are even more overconfident, which would sharpen the live signal used by kalshi_trading.py.",
+    },
+    {
+        "key": "trade_gas_nearclose_named_roi",
+        "hypothesis": "Named (social-opted-in) takers in the gas-nearclose window have different ROI than anonymous takers in the same window.",
+        "unit": "trade", "metric": "roi",
+        "segment_expr": "m.series_ticker IN ('KXAAAGASW','KXAAAGASD','KXAAAGASM') AND m.close_ts IS NOT NULL AND (m.close_ts - t.created_ts) < 3600 AND t.taker_nickname IS NOT NULL AND t.taker_nickname != ''",
+        "notes": "Combines two learnings: the validated near-close mechanism + taker_vs_named_maker_roi's finding that named/social-visible participants behave differently (there, named MAKERS were less predatory than anonymous ones -- opposite of the whale-tracking thesis). Here we ask the taker-side version: are named (i.e. opted into Kalshi's social/leaderboard feature) near-close takers MORE overconfident (more visible retail exhibitionism) or LESS (maybe more sophisticated, since they're comfortable being tracked)?",
     },
 ]
 
