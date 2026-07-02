@@ -48,17 +48,26 @@ class KalshiError(RuntimeError):
         self.status, self.body, self.path = status, body, path
 
 
-def request(method: str, path: str, params: dict | None = None, *, retries: int = 6) -> Any:
+def request(
+    method: str, path: str, params: dict | None = None, *, body: dict | None = None, retries: int = 6
+) -> Any:
     """Signed request. Retries on 429/5xx and network/DNS errors with exp
     backoff. Default 6 retries = backoffs of ~1,2,4,8,16,32s = ~1 min total
     retry budget, enough to ride through most DNS blips without the caller
     crashing. Callers in tight polling loops can pass retries=2 to fast-fail.
+
+    `body` (if given) is signed the same as a bodyless request -- Kalshi's
+    signature covers only timestamp+method+path, never the payload (verified
+    against docs.kalshi.com 2026-07-01) -- so signing is unchanged for
+    POST/DELETE. Order-mutating callers (post/delete below) default retries=0:
+    auto-retrying a request that creates or cancels a real order is exactly
+    how you'd double-submit if the first response was merely lost in transit.
     """
     last_err: Exception | None = None
     for attempt in range(retries + 1):
         try:
             r = requests.request(
-                method, BASE_URL + path, headers=_sign(method, path), params=params, timeout=30
+                method, BASE_URL + path, headers=_sign(method, path), params=params, json=body, timeout=30
             )
             if r.status_code == 429 or 500 <= r.status_code < 600:
                 raise KalshiError(r.status_code, r.text[:400], path)
@@ -80,3 +89,11 @@ def request(method: str, path: str, params: dict | None = None, *, retries: int 
 
 def get(path: str, params: dict | None = None) -> Any:
     return request("GET", path, params)
+
+
+def post(path: str, body: dict | None = None, *, retries: int = 0) -> Any:
+    return request("POST", path, body=body, retries=retries)
+
+
+def delete(path: str, params: dict | None = None, *, retries: int = 0) -> Any:
+    return request("DELETE", path, params=params, retries=retries)
