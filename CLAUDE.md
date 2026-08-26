@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🛑 PROJECT HALTED (2026-08-26) — Kalshi banned in Washington state
+
+**All automated/recurring Kalshi scripts have been deliberately stopped.** Do not re-enable, re-register, or restart any of the following without Dave's explicit go-ahead — this was a compliance-driven shutdown, not routine cleanup:
+
+- Windows Scheduled Tasks `KalshiSocialCollector` and `KalshiDailyExperiment` — **Disabled** (not deleted; task definitions still exist).
+- Any live `collect_social.py` / `run_collector.pyw` process — killed.
+- GitHub Actions workflows `tail_public`, `backfill_public`, `tail_social` — all **`disabled_manually`** (the latter was already off from an earlier consolidation, unrelated to this).
+- `kalshi_trading.py`'s live order-placement path (`execute --live`) was **not** touched by this shutdown — it was already manual-trigger-only with no scheduler, so it didn't fall under "automated/recurring." Its status re: the Washington ban is an open question Dave still needs to decide (API key revocation, etc.) — don't assume it's been addressed just because the schedulers are off.
+
+If a future session is asked to "get things running again" or "why isn't data flowing," **check this section and ask before touching any of the above** — don't silently re-enable something that was intentionally stopped for a legal/regulatory reason.
+
+> **⚠️ Environment: Dave works EXCLUSIVELY in the Claude Desktop app on Windows 11 Home — never CLI, browser, or mobile.** No CLI-only slash-command panels; live-stream/Monitor output does NOT render inline for him (use auto-refreshing web UIs, on-demand snapshots, or polling digests); he runs shell commands in a separate terminal himself and reports back. Full note in global `~/.claude/CLAUDE.md`.
+
 ## What this is
 
 A whale-tracker / research pipeline for Kalshi prediction markets. Continuously ingests two trade firehoses, enriches them with market metadata, and runs a self-driving library of "freakonomics-style" hypothesis tests to find tradable edges. Python 3.13, SQLite, no ORM.
