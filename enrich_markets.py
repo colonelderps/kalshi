@@ -113,7 +113,7 @@ def main() -> int:
     con = db.connect()
     stale_cutoff = int(time.time()) - args.stale_hours * 3600
     tickers = tickers_to_refresh(con, stale_cutoff, args.limit or None)
-    print(f"To enrich: {len(tickers)} tickers")
+    print(f"[{dt.datetime.now():%H:%M:%S}] To enrich: {len(tickers)} tickers")
     if not tickers:
         return 0
 
@@ -132,11 +132,12 @@ def main() -> int:
             event_tickers.setdefault(ev, []).append(ticker)
         pass1_ok += 1
         if (i + 1) % 50 == 0:
-            con.commit()
-            print(f"  pass1 {i+1}/{len(tickers)}  ok={pass1_ok}  404={pass1_missing}  events={len(event_tickers)}")
+            db.commit_with_retry(con, label="pass1")
+            print(f"  [{dt.datetime.now():%H:%M:%S}] pass1 {i+1}/{len(tickers)}  "
+                  f"ok={pass1_ok}  404={pass1_missing}  events={len(event_tickers)}")
         time.sleep(SLEEP)
-    con.commit()
-    print(f"Pass 1 done. markets_ok={pass1_ok} missing={pass1_missing} unique_events={len(event_tickers)}")
+    db.commit_with_retry(con, label="pass1-final")
+    print(f"[{dt.datetime.now():%H:%M:%S}] Pass 1 done. markets_ok={pass1_ok} missing={pass1_missing} unique_events={len(event_tickers)}")
 
     # Pass 2: categories via event endpoint
     for i, (ev, related_tickers) in enumerate(event_tickers.items()):
@@ -153,11 +154,11 @@ def main() -> int:
                 (category, subcategory, series_ticker, t),
             )
         if (i + 1) % 20 == 0:
-            con.commit()
-            print(f"  pass2 {i+1}/{len(event_tickers)}")
+            db.commit_with_retry(con, label="pass2")
+            print(f"  [{dt.datetime.now():%H:%M:%S}] pass2 {i+1}/{len(event_tickers)}")
         time.sleep(SLEEP)
-    con.commit()
-    print(f"Pass 2 done. Events enriched: {len(event_tickers)}")
+    db.commit_with_retry(con, label="pass2-final")
+    print(f"[{dt.datetime.now():%H:%M:%S}] Pass 2 done. Events enriched: {len(event_tickers)}")
     return 0
 
 
